@@ -62,7 +62,7 @@ open(Name) ->
 %% @doc Return all resources associated with 
 close(Name) ->
     Pid = pg2:get_closest_pid(Name),
-    gen_server:call(Pid, close).
+    gen_server:cast(Pid, close).
 
 %% @doc Change the brightness of the LED. For many LEDs this just 
 %%      controls whether they are on (1) or off (0)
@@ -120,8 +120,9 @@ init([Name]) ->
     LedDirName = ?LED_SYSFS_DIR ++ Name ++ "/",
     BrightnessFile = LedDirName ++ "brightness",
     {ok, BrightnessFileHandle} = file:open(BrightnessFile, [read, write]),
-    pg2:create(Name),
-    pg2:join(Name, self()),
+    ok = pg2:create(Name),
+    ok = pg2:join(Name, self()),
+    io:format("pg2:join(~p, ~p)~n", [Name, self()]),
     State = #state{name = Name,
 		   dir_name = LedDirName,
 		   brightness_file_handle = BrightnessFileHandle},
@@ -168,10 +169,7 @@ handle_call({blink, OnTimeMillis, OffTimeMillis}, _From, State) ->
     write_sysfs_string(State#state.dir_name ++ "trigger", "timer"),
     write_sysfs_string(State#state.dir_name ++ "delay_on", integer_to_list(OnTimeMillis)),
     write_sysfs_string(State#state.dir_name ++ "delay_off", integer_to_list(OffTimeMillis)),
-    {reply, ok, State};
-
-handle_call(close, _From, State) ->
-    {stop, closed, State}.
+    {reply, ok, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -183,8 +181,9 @@ handle_call(close, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast(_Msg, State) ->
-    {noreply, State}.
+handle_cast(close, State) ->
+    io:format("close~n"),
+    {stop, normal, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -211,9 +210,11 @@ handle_info(_Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, State) ->
+    io:format("terminating~n"),
     file:close(State#state.brightness_file_handle),
-    pg2:leave(State#state.name, self()),
+    ok = pg2:leave(State#state.name, self()),
     pg2:delete(State#state.name),
+    io:format("pg2:delete(~p)~n", [State#state.name]),
     ok.
 
 %%--------------------------------------------------------------------

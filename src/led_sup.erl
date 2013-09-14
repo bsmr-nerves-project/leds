@@ -27,5 +27,5 @@ start_child(Name) ->
 
 init([]) ->
     {ok, { {simple_one_for_one, 5, 10}, 
-           [{led, {led, start_link, []}, permanent, 5000, worker, [led]}] } }.
+           [{led, {led, start_link, []}, transient, 5000, worker, [led]}] } }.
 
