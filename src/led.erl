@@ -11,7 +11,10 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1,
+-export([list/0,
+	 open/1,
+	 close/1,
+	 start_link/1,
 	 set_brightness/2,
 	 brightness/1,
 	 max_brightness/1,
@@ -27,6 +30,9 @@
 -define(LED_SYSFS_DIR, "/sys/class/leds/").
 
 -record(state, {
+	  %% LED name (of the form "beaglebone:green:usr0")
+	  name,
+
 	  %% LED class directory path
 	  dir_name,
 	  
@@ -34,42 +40,66 @@
 	  brightness_file_handle
 	 }).
 
-
 %%%===================================================================
 %%% API
 %%%===================================================================
 
+%% @doc Return the list of LEDs available on the system
+list() ->
+    case file:list_dir(?LED_SYSFS_DIR) of
+	{ok, LedNames} ->
+	    {ok, LedNames};
+	{error, enoent} ->
+	    % No LEDs exposed through sysfs
+	    {ok, []}
+    end.
+
+%% @doc Open one of the LEDs returned by list/1. An LED must
+%%      be opened before it can be used.
+open(Name) ->
+    led_sup:start_child(Name).
+
+%% @doc Return all resources associated with 
+close(Name) ->
+    Pid = pg2:get_closest_pid(Name),
+    gen_server:call(Pid, close).
+
 %% @doc Change the brightness of the LED. For many LEDs this just 
 %%      controls whether they are on (1) or off (0)
-set_brightness(Led, BrightnessLevel) ->
-    gen_server:call(Led, {set_brightness, BrightnessLevel}).
+set_brightness(Name, BrightnessLevel) ->
+    Pid = pg2:get_closest_pid(Name),
+    gen_server:call(Pid, {set_brightness, BrightnessLevel}).
 
 %% @doc Return the current LED brightness
-brightness(Led) ->
-    gen_server:call(Led, {brightness}).
+brightness(Name) ->
+    Pid = pg2:get_closest_pid(Name),
+    gen_server:call(Pid, brightness).
 
 %% @doc Get the maximum brightness that may be passed to 
 %%      set_brightness/2.
-max_brightness(Led) ->
-    gen_server:call(Led, {max_brightness}).
+max_brightness(Name) ->
+    Pid = pg2:get_closest_pid(Name),
+    gen_server:call(Pid, max_brightness).
 
 %% @doc Disable all triggers on the LED    
-disable_triggers(Led) ->
-    gen_server:call(Led, {disable_triggers}).
+disable_triggers(Name) ->
+    Pid = pg2:get_closest_pid(Name),
+    gen_server:call(Pid, disable_triggers).
 
 %% @doc Configure a trigger to blink the LED
-blink(Led, OnTimeMillis, OffTimeMillis) ->
-    gen_server:call(Led, {blink, OnTimeMillis, OffTimeMillis}).
+blink(Name, OnTimeMillis, OffTimeMillis) ->
+    Pid = pg2:get_closest_pid(Name),
+    gen_server:call(Pid, {blink, OnTimeMillis, OffTimeMillis}).
 
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
 %%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
+%% @spec start_link(Name) -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(LedName) ->
-    gen_server:start_link(?MODULE, [LedName], []).
+start_link(Name) ->
+    gen_server:start_link(?MODULE, [Name], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -86,11 +116,14 @@ start_link(LedName) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([LedName]) ->
-    LedDirName = ?LED_SYSFS_DIR ++ LedName ++ "/",
+init([Name]) ->
+    LedDirName = ?LED_SYSFS_DIR ++ Name ++ "/",
     BrightnessFile = LedDirName ++ "brightness",
     {ok, BrightnessFileHandle} = file:open(BrightnessFile, [read, write]),
-    State = #state{dir_name = LedDirName, 
+    pg2:create(Name),
+    pg2:join(Name, self()),
+    State = #state{name = Name,
+		   dir_name = LedDirName,
 		   brightness_file_handle = BrightnessFileHandle},
     {ok, State}.
 
@@ -115,19 +148,19 @@ handle_call({set_brightness, BrightnessLevel}, _From, State) ->
     Reply = ok,
     {reply, Reply, State};
 
-handle_call({brightness}, _From, State) ->
+handle_call(brightness, _From, State) ->
     {ok, ValueAsString} = file:pread(State#state.brightness_file_handle, 
 				     0, 32),
     {Value, _} = string:to_integer(ValueAsString),
     Reply = {ok, Value},
     {reply, Reply, State};
     
-handle_call({max_brightness}, _From, State) ->
+handle_call(max_brightness, _From, State) ->
     Value = read_sysfs_integer(State#state.dir_name ++ "max_brightness"),
     Reply = {ok, Value},
     {reply, Reply, State};
 
-handle_call({disable_triggers}, _From, State) ->
+handle_call(disable_triggers, _From, State) ->
     write_sysfs_string(State#state.dir_name ++ "trigger", "none"),
     {reply, ok, State};
 
@@ -135,7 +168,10 @@ handle_call({blink, OnTimeMillis, OffTimeMillis}, _From, State) ->
     write_sysfs_string(State#state.dir_name ++ "trigger", "timer"),
     write_sysfs_string(State#state.dir_name ++ "delay_on", integer_to_list(OnTimeMillis)),
     write_sysfs_string(State#state.dir_name ++ "delay_off", integer_to_list(OffTimeMillis)),
-    {reply, ok, State}.
+    {reply, ok, State};
+
+handle_call(close, _From, State) ->
+    {stop, closed, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -174,7 +210,10 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(_Reason, State) ->
+    file:close(State#state.brightness_file_handle),
+    pg2:leave(State#state.name, self()),
+    pg2:delete(State#state.name),
     ok.
 
 %%--------------------------------------------------------------------

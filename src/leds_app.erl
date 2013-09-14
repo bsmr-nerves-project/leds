@@ -10,7 +10,7 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
-    leds_sup:start_link().
+    led_sup:start_link().
 
 stop(_State) ->
     ok.
