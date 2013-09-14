@@ -122,7 +122,6 @@ init([Name]) ->
     {ok, BrightnessFileHandle} = file:open(BrightnessFile, [read, write]),
     ok = pg2:create(Name),
     ok = pg2:join(Name, self()),
-    io:format("pg2:join(~p, ~p)~n", [Name, self()]),
     State = #state{name = Name,
 		   dir_name = LedDirName,
 		   brightness_file_handle = BrightnessFileHandle},
@@ -182,7 +181,6 @@ handle_call({blink, OnTimeMillis, OffTimeMillis}, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast(close, State) ->
-    io:format("close~n"),
     {stop, normal, State}.
 
 %%--------------------------------------------------------------------
@@ -210,11 +208,9 @@ handle_info(_Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, State) ->
-    io:format("terminating~n"),
     file:close(State#state.brightness_file_handle),
     ok = pg2:leave(State#state.name, self()),
-    pg2:delete(State#state.name),
-    io:format("pg2:delete(~p)~n", [State#state.name]),
+    ok = pg2:delete(State#state.name),
     ok.
 
 %%--------------------------------------------------------------------
