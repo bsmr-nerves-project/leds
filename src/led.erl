@@ -25,7 +25,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--define(SERVER, ?MODULE). 
+-define(SERVER, ?MODULE).
 
 -define(LED_SYSFS_DIR, "/sys/class/leds/").
 
@@ -35,7 +35,7 @@
 
 	  %% LED class directory path
 	  dir_name,
-	  
+
 	  %% Handles
 	  brightness_file_handle
 	 }).
@@ -45,6 +45,7 @@
 %%%===================================================================
 
 %% @doc Return the list of LEDs available on the system
+-spec list() -> {ok, [string()]}.
 list() ->
     case file:list_dir(?LED_SYSFS_DIR) of
 	{ok, LedNames} ->
@@ -56,37 +57,44 @@ list() ->
 
 %% @doc Open one of the LEDs returned by list/1. An LED must
 %%      be opened before it can be used.
+-spec open(string()) -> {ok, pid()} | {error, _}.
 open(Name) ->
     led_sup:start_child(Name).
 
-%% @doc Return all resources associated with 
+%% @doc Return all resources associated with
+-spec close(string()) -> ok.
 close(Name) ->
     Pid = pg2:get_closest_pid(Name),
     gen_server:cast(Pid, close).
 
-%% @doc Change the brightness of the LED. For many LEDs this just 
+%% @doc Change the brightness of the LED. For many LEDs this just
 %%      controls whether they are on (1) or off (0)
+-spec set_brightness(string(), non_neg_integer()) -> ok.
 set_brightness(Name, BrightnessLevel) ->
     Pid = pg2:get_closest_pid(Name),
     gen_server:call(Pid, {set_brightness, BrightnessLevel}).
 
 %% @doc Return the current LED brightness
+-spec brightness(string()) -> {ok, non_neg_integer()}.
 brightness(Name) ->
     Pid = pg2:get_closest_pid(Name),
     gen_server:call(Pid, brightness).
 
-%% @doc Get the maximum brightness that may be passed to 
+%% @doc Get the maximum brightness that may be passed to
 %%      set_brightness/2.
+-spec max_brightness(string()) -> {ok, non_neg_integer()}.
 max_brightness(Name) ->
     Pid = pg2:get_closest_pid(Name),
     gen_server:call(Pid, max_brightness).
 
-%% @doc Disable all triggers on the LED    
+%% @doc Disable all triggers on the LED
+-spec disable_triggers(string()) -> ok.
 disable_triggers(Name) ->
     Pid = pg2:get_closest_pid(Name),
     gen_server:call(Pid, disable_triggers).
 
 %% @doc Configure a trigger to blink the LED
+-spec blink(string(), non_neg_integer(), non_neg_integer) -> ok.
 blink(Name, OnTimeMillis, OffTimeMillis) ->
     Pid = pg2:get_closest_pid(Name),
     gen_server:call(Pid, {blink, OnTimeMillis, OffTimeMillis}).
@@ -98,6 +106,7 @@ blink(Name, OnTimeMillis, OffTimeMillis) ->
 %% @spec start_link(Name) -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
+-spec start_link(string()) -> {ok, pid()} | {error,_} | ignore.
 start_link(Name) ->
     gen_server:start_link(?MODULE, [Name], []).
 
@@ -142,19 +151,19 @@ init([Name]) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call({set_brightness, BrightnessLevel}, _From, State) ->
-    file:pwrite(State#state.brightness_file_handle, 
-		0, 
+    file:pwrite(State#state.brightness_file_handle,
+		0,
 		integer_to_list(BrightnessLevel)),
     Reply = ok,
     {reply, Reply, State};
 
 handle_call(brightness, _From, State) ->
-    {ok, ValueAsString} = file:pread(State#state.brightness_file_handle, 
+    {ok, ValueAsString} = file:pread(State#state.brightness_file_handle,
 				     0, 32),
     {Value, _} = string:to_integer(ValueAsString),
     Reply = {ok, Value},
     {reply, Reply, State};
-    
+
 handle_call(max_brightness, _From, State) ->
     Value = read_sysfs_integer(State#state.dir_name ++ "max_brightness"),
     Reply = {ok, Value},
@@ -227,6 +236,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+-spec read_sysfs_integer(string()) -> integer().
 read_sysfs_integer(Filename) ->
     {ok, Handle} = file:open(Filename, [read]),
     {ok, ValueAsString} = file:pread(Handle, 0, 32),
@@ -234,6 +244,7 @@ read_sysfs_integer(Filename) ->
     {Value, _} = string:to_integer(ValueAsString),
     Value.
 
+-spec write_sysfs_string(string(), string()) -> ok.
 write_sysfs_string(Filename, Value) ->
     {ok, Handle} = file:open(Filename, [write]),
     file:pwrite(Handle, 0, Value),
