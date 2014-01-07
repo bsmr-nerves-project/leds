@@ -45,11 +45,12 @@
 %%%===================================================================
 
 %% @doc Return the list of LEDs available on the system
--spec list() -> {ok, [string()]}.
+-spec list() -> {ok, [atom()]}.
 list() ->
     case file:list_dir(?LED_SYSFS_DIR) of
 	{ok, LedNames} ->
-	    {ok, LedNames};
+	    AtomizedNames = [list_to_atom(X) || X <- LedNames],
+	    {ok, AtomizedNames};
 	{error, enoent} ->
 	    % No LEDs exposed through sysfs
 	    {ok, []}
@@ -57,56 +58,48 @@ list() ->
 
 %% @doc Open one of the LEDs returned by list/1. An LED must
 %%      be opened before it can be used.
--spec open(string()) -> {ok, pid()} | {error, _}.
+-spec open(atom()) -> {ok, pid()} | {error, _}.
 open(Name) ->
     led_sup:start_child(Name).
 
 %% @doc Return all resources associated with
--spec close(string()) -> ok.
+-spec close(atom()) -> ok.
 close(Name) ->
-    Pid = pg2:get_closest_pid(Name),
-    gen_server:cast(Pid, close).
+    gen_server:cast(Name, close).
 
 %% @doc Change the brightness of the LED. For many LEDs this just
 %%      controls whether they are on (1) or off (0)
--spec set_brightness(string(), non_neg_integer()) -> ok.
+-spec set_brightness(atom(), non_neg_integer()) -> ok.
 set_brightness(Name, BrightnessLevel) ->
-    Pid = pg2:get_closest_pid(Name),
-    gen_server:call(Pid, {set_brightness, BrightnessLevel}).
+    gen_server:call(Name, {set_brightness, BrightnessLevel}).
 
 %% @doc Return the current LED brightness
--spec brightness(string()) -> {ok, non_neg_integer()}.
+-spec brightness(atom()) -> {ok, non_neg_integer()}.
 brightness(Name) ->
-    Pid = pg2:get_closest_pid(Name),
-    gen_server:call(Pid, brightness).
+    gen_server:call(Name, brightness).
 
 %% @doc Get the maximum brightness that may be passed to
 %%      set_brightness/2.
--spec max_brightness(string()) -> {ok, non_neg_integer()}.
+-spec max_brightness(atom()) -> {ok, non_neg_integer()}.
 max_brightness(Name) ->
-    Pid = pg2:get_closest_pid(Name),
-    gen_server:call(Pid, max_brightness).
+    gen_server:call(Name, max_brightness).
 
 %% @doc Disable all triggers on the LED
--spec disable_triggers(string()) -> ok.
+-spec disable_triggers(atom()) -> ok.
 disable_triggers(Name) ->
-    Pid = pg2:get_closest_pid(Name),
-    gen_server:call(Pid, disable_triggers).
+    gen_server:call(Name, disable_triggers).
 
 %% @doc Configure a trigger to blink the LED
--spec blink(string(), non_neg_integer(), non_neg_integer) -> ok.
+-spec blink(atom(), non_neg_integer(), non_neg_integer) -> ok.
 blink(Name, OnTimeMillis, OffTimeMillis) ->
-    Pid = pg2:get_closest_pid(Name),
-    gen_server:call(Pid, {blink, OnTimeMillis, OffTimeMillis}).
+    gen_server:call(Name, {blink, OnTimeMillis, OffTimeMillis}).
 
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
-%%
-%% @spec start_link(Name) -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
--spec start_link(string()) -> {ok, pid()} | {error,_} | ignore.
+-spec start_link(atom()) -> {ok, pid()} | {error,_} | ignore.
 start_link(Name) ->
     gen_server:start_link(?MODULE, [Name], []).
 
@@ -126,11 +119,11 @@ start_link(Name) ->
 %% @end
 %%--------------------------------------------------------------------
 init([Name]) ->
-    LedDirName = ?LED_SYSFS_DIR ++ Name ++ "/",
+    true = register(Name, self()),
+    StringName = atom_to_list(Name),
+    LedDirName = ?LED_SYSFS_DIR ++ StringName ++ "/",
     BrightnessFile = LedDirName ++ "brightness",
     {ok, BrightnessFileHandle} = file:open(BrightnessFile, [read, write]),
-    ok = pg2:create(Name),
-    ok = pg2:join(Name, self()),
     State = #state{name = Name,
 		   dir_name = LedDirName,
 		   brightness_file_handle = BrightnessFileHandle},
@@ -218,8 +211,6 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 terminate(_Reason, State) ->
     file:close(State#state.brightness_file_handle),
-    ok = pg2:leave(State#state.name, self()),
-    ok = pg2:delete(State#state.name),
     ok.
 
 %%--------------------------------------------------------------------

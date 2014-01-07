@@ -18,6 +18,7 @@
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
+-spec start_child(atom()) -> {ok, pid()} | {error, _}.
 start_child(Name) ->
     supervisor:start_child(?SERVER, [Name]).
 
@@ -26,6 +27,5 @@ start_child(Name) ->
 %% ===================================================================
 
 init([]) ->
-    {ok, { {simple_one_for_one, 5, 10}, 
+    {ok, { {simple_one_for_one, 5, 10},
            [{led, {led, start_link, []}, transient, 5000, worker, [led]}] } }.
-
