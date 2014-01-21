@@ -1,12 +1,10 @@
 {application, leds,
  [
-  {description, ""},
+  {description, "Interface to the LEDs exposed through sysfs"},
   {vsn, "1"},
   {registered, []},
   {applications, [
                   kernel,
                   stdlib
-                 ]},
-  {mod, { leds_app, []}},
-  {env, []}
+                 ]}
  ]}.

@@ -12,9 +12,8 @@
 
 %% API
 -export([list/0,
-	 open/1,
-	 close/1,
 	 start_link/1,
+	 close/1,
 	 set_brightness/2,
 	 brightness/1,
 	 max_brightness/1,
@@ -30,9 +29,6 @@
 -define(LED_SYSFS_DIR, "/sys/class/leds/").
 
 -record(state, {
-	  %% LED name (of the form "beaglebone:green:usr0")
-	  name,
-
 	  %% LED class directory path
 	  dir_name,
 
@@ -58,50 +54,41 @@ list() ->
 
 %% @doc Open one of the LEDs returned by list/1. An LED must
 %%      be opened before it can be used.
--spec open(atom()) -> {ok, pid()} | {error, _}.
-open(Name) ->
-    led_sup:start_child(Name).
+-spec start_link(atom()) -> {ok, pid()} | {error, _}.
+start_link(LedName) ->
+    gen_server:start_link({local, LedName}, ?MODULE, [LedName], []).
 
 %% @doc Return all resources associated with
 -spec close(atom()) -> ok.
-close(Name) ->
-    gen_server:cast(Name, close).
+close(LedName) ->
+    gen_server:cast(LedName, close).
 
 %% @doc Change the brightness of the LED. For many LEDs this just
 %%      controls whether they are on (1) or off (0)
 -spec set_brightness(atom(), non_neg_integer()) -> ok.
-set_brightness(Name, BrightnessLevel) ->
-    gen_server:call(Name, {set_brightness, BrightnessLevel}).
+set_brightness(LedName, BrightnessLevel) ->
+    gen_server:call(LedName, {set_brightness, BrightnessLevel}).
 
 %% @doc Return the current LED brightness
 -spec brightness(atom()) -> {ok, non_neg_integer()}.
-brightness(Name) ->
-    gen_server:call(Name, brightness).
+brightness(LedName) ->
+    gen_server:call(LedName, brightness).
 
 %% @doc Get the maximum brightness that may be passed to
 %%      set_brightness/2.
 -spec max_brightness(atom()) -> {ok, non_neg_integer()}.
-max_brightness(Name) ->
-    gen_server:call(Name, max_brightness).
+max_brightness(LedName) ->
+    gen_server:call(LedName, max_brightness).
 
 %% @doc Disable all triggers on the LED
 -spec disable_triggers(atom()) -> ok.
-disable_triggers(Name) ->
-    gen_server:call(Name, disable_triggers).
+disable_triggers(LedName) ->
+    gen_server:call(LedName, disable_triggers).
 
 %% @doc Configure a trigger to blink the LED
 -spec blink(atom(), non_neg_integer(), non_neg_integer) -> ok.
-blink(Name, OnTimeMillis, OffTimeMillis) ->
-    gen_server:call(Name, {blink, OnTimeMillis, OffTimeMillis}).
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%% @end
-%%--------------------------------------------------------------------
--spec start_link(atom()) -> {ok, pid()} | {error,_} | ignore.
-start_link(Name) ->
-    gen_server:start_link(?MODULE, [Name], []).
+blink(LedName, OnTimeMillis, OffTimeMillis) ->
+    gen_server:call(LedName, {blink, OnTimeMillis, OffTimeMillis}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -118,14 +105,12 @@ start_link(Name) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([Name]) ->
-    true = register(Name, self()),
-    StringName = atom_to_list(Name),
+init([LedName]) ->
+    StringName = atom_to_list(LedName),
     LedDirName = ?LED_SYSFS_DIR ++ StringName ++ "/",
     BrightnessFile = LedDirName ++ "brightness",
     {ok, BrightnessFileHandle} = file:open(BrightnessFile, [read, write]),
-    State = #state{name = Name,
-		   dir_name = LedDirName,
+    State = #state{dir_name = LedDirName,
 		   brightness_file_handle = BrightnessFileHandle},
     {ok, State}.
 
