@@ -3,6 +3,7 @@
   {description, "Interface to the LEDs exposed through sysfs"},
   {vsn, "1"},
   {registered, []},
+  {modules, []},
   {applications, [
                   kernel,
                   stdlib
